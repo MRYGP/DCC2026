@@ -1,0 +1,60 @@
+{
+  "article_id": "001",
+  "topic": "流水体质诊断",
+  "hook_candidates": [
+    {
+      "id": 1,
+      "type": "认知反差",
+      "hook": "你以为银行看流水规模，其实80%死在这3个细节",
+      "explanation": "客户以为流水大就能贷，实际银行更看稳定性、集中度、空转嫌疑",
+      "risk_level": "low",
+      "compliance_check": "pass",
+      "score": 9,
+      "selection_reason": "认知反差最强，最能引起中介共鸣"
+    },
+    {
+      "id": 2,
+      "type": "结果反差",
+      "hook": "同样流水300万：A秒批200万，B只批50万，差在哪里？",
+      "explanation": "流水规模相同，但稳定性、客户集中度不同导致额度差异",
+      "risk_level": "low",
+      "compliance_check": "pass",
+      "score": 8,
+      "selection_reason": "结果反差明显，引发读者好奇"
+    },
+    {
+      "id": 3,
+      "type": "行动反差",
+      "hook": "为什么流水再大也不建议立即申请？先做这3件事",
+      "explanation": "流水有问题直接申请会被拒，影响征信，应该先诊断再申请",
+      "risk_level": "low",
+      "compliance_check": "pass",
+      "score": 7,
+      "selection_reason": "给出具体行动建议，实用性强"
+    },
+    {
+      "id": 4,
+      "type": "认知反差",
+      "hook": "流水诊断的3个误区：你以为的'好'，可能是银行的'雷'",
+      "explanation": "客户眼中的好流水（大额集中），在银行眼中可能是风险点",
+      "risk_level": "low",
+      "compliance_check": "pass",
+      "score": 8,
+      "selection_reason": "误区揭露，直击痛点"
+    },
+    {
+      "id": 5,
+      "type": "结果反差",
+      "hook": "同样做流水诊断：新手只看规模，高手看这3个隐藏指标",
+      "explanation": "规模是显性指标，稳定性、持续性、分散度是隐藏指标",
+      "risk_level": "low",
+      "compliance_check": "pass",
+      "score": 7,
+      "selection_reason": "区分新手/高手，建立专业性"
+    }
+  ],
+  "selected_hook": 1,
+  "selected_reason": "认知反差型标题效果最好（实验001已验证），最能引起目标用户共鸣",
+  "generation_date": "2026-02-03",
+  "generator_version": "v1.0"
+}
