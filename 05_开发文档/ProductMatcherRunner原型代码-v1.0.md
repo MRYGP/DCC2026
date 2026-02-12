@@ -204,7 +204,8 @@ class MatchedProduct:
 # repositories/skill_repository.py
 import yaml
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+from datetime import datetime
 from models.product import ProductSkill
 import logging
 
@@ -235,7 +236,12 @@ class SkillRepository:
             logger.info(f"从缓存加载产品Skill，共{len(self._cache[cache_key])}个")
             return self._cache[cache_key]
         
-        # 加载所有产品Skill文件
+        # 强制重载时调用 reload_skills 并返回缓存
+        if force_reload:
+            self.reload_skills()
+            return self._cache.get(cache_key, [])
+        
+        # 首次加载：与 reload_skills 逻辑一致
         products = []
         products_dir = self.skills_dir / "products"
         
@@ -243,23 +249,18 @@ class SkillRepository:
             logger.error(f"产品Skill目录不存在: {products_dir}")
             return []
         
-        # 递归查找所有.yaml文件
         for yaml_file in products_dir.rglob("*.yaml"):
             try:
                 product = self._load_product_skill(yaml_file)
-                
-                # 只加载active状态的产品
                 if product.metadata.get('status') == 'active':
                     products.append(product)
                     logger.debug(f"已加载产品: {product.skill_name}")
                 else:
                     logger.debug(f"跳过非active产品: {product.skill_name}")
-            
             except Exception as e:
                 logger.error(f"加载产品Skill失败: {yaml_file}, 错误: {e}")
                 continue
         
-        # 缓存结果
         self._cache[cache_key] = products
         logger.info(f"成功加载{len(products)}个产品Skill")
         
@@ -307,12 +308,70 @@ class SkillRepository:
         # 创建ProductSkill对象
         return ProductSkill.from_dict(data)
     
-    def reload_skills(self):
-        """重新加载所有Skill（热更新）"""
+    def reload_skills(self) -> Dict[str, Any]:
+        """
+        重新加载所有Skill（热更新）
+        
+        Returns:
+            Dict 包含：
+            - success_count: 成功加载数量
+            - failed_count: 失败数量
+            - failed_files: 失败的文件列表
+            - errors: 错误详情
+        """
         logger.info("重新加载Skill配置...")
         self._cache.clear()
-        self.load_all_products(force_reload=True)
-        logger.info("Skill配置重新加载完成")
+        
+        success_count = 0
+        failed_count = 0
+        failed_files = []
+        errors = []
+        products = []
+        products_dir = self.skills_dir / "products"
+        
+        if not products_dir.exists():
+            logger.error(f"产品Skill目录不存在: {products_dir}")
+            return {
+                "success_count": 0,
+                "failed_count": 0,
+                "failed_files": [],
+                "errors": [],
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        for yaml_file in products_dir.rglob("*.yaml"):
+            try:
+                product = self._load_product_skill(yaml_file)
+                if product.metadata.get('status') == 'active':
+                    success_count += 1
+                    products.append(product)
+                    logger.debug(f"已加载产品: {product.skill_name}")
+                else:
+                    logger.debug(f"跳过非active产品: {product.skill_name}")
+            except Exception as e:
+                failed_count += 1
+                failed_files.append(str(yaml_file))
+                errors.append({
+                    "file": str(yaml_file),
+                    "error": str(e)
+                })
+                logger.error(f"加载失败: {yaml_file}, 错误: {e}")
+        
+        self._cache["all_products"] = products
+        
+        report = {
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "failed_files": failed_files,
+            "errors": errors,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        logger.info(
+            f"Skill配置重新加载完成: 成功{success_count}个, 失败{failed_count}个"
+        )
+        
+        return report
 ```
 
 ---
@@ -380,23 +439,18 @@ class ExpressionEvaluator:
         
         raise ValueError(f"不支持的操作符: {operator_str}")
     
-    @staticmethod
     def evaluate_expression(
+        self,
         expression: str,
         context: Dict[str, Any]
     ) -> float:
         """
         求值数学表达式（用于额度计算）
         
-        Args:
-            expression: 表达式字符串（如 "annual_tax * 30"）
-            context: 上下文变量（如 {"annual_tax": 15000}）
-        
-        Returns:
-            float: 计算结果
-        
-        安全性说明：
-            只允许基本算术运算，不允许执行任意Python代码
+        安全性改进：
+        - 使用正则按完整标识符边界替换
+        - 按变量名长度倒序替换（防止误替换）
+        - 字符串类型变量加引号
         """
         # 安全检查：只允许数字、运算符、变量名
         allowed_chars = set('0123456789+-*/()._ ')
@@ -410,24 +464,35 @@ class ExpressionEvaluator:
         if any(keyword in expression.lower() for keyword in dangerous_keywords):
             raise ValueError(f"表达式包含危险关键字: {expression}")
         
-        # 替换变量
+        # 验证 context key 必须是合法标识符
+        for var_name in context.keys():
+            if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', var_name):
+                raise ValueError(f"非法变量名: {var_name}")
+        
+        # 按变量名长度倒序排序（防止 annual_tax 误伤 annual_tax_rate）
+        sorted_vars = sorted(context.items(), key=lambda x: len(x[0]), reverse=True)
+        
         safe_expression = expression
-        for var_name, var_value in context.items():
-            safe_expression = safe_expression.replace(var_name, str(var_value))
+        
+        # 使用正则按完整标识符边界替换
+        for var_name, var_value in sorted_vars:
+            pattern = r'\b' + re.escape(var_name) + r'\b'
+            if isinstance(var_value, str):
+                replacement = f"'{var_value}'"
+            else:
+                replacement = str(var_value)
+            safe_expression = re.sub(pattern, replacement, safe_expression)
         
         # 求值（限制在安全的数学运算）
         try:
-            # 只允许基本数学函数
             allowed_names = {
                 'min': min,
                 'max': max,
                 'abs': abs,
                 'round': round,
             }
-            
             result = eval(safe_expression, {"__builtins__": {}}, allowed_names)
             return float(result)
-        
         except Exception as e:
             raise ValueError(f"表达式求值失败: {expression}, 错误: {e}")
 ```
@@ -825,6 +890,57 @@ class AuditLogger:
 
 ---
 
+## V0能力矩阵（强制遵守）
+
+| 能力点 | V0状态 | 说明 | V1+计划 |
+|--------|--------|------|---------|
+| **Skill定义** | | | |
+| `eligibility.logic` (all/any) | ✅ 已实现 | 仅支持顶层单层logic | V1支持嵌套logic |
+| `operator`: >=, <=, ==, !=, in, not_in | ✅ 已实现 | 完整支持 | |
+| `operator`: between | ✅ 已实现 | 双端点包含 [min, max] | |
+| `operator`: contains, matches | ✅ 已实现 | 字符串匹配 | |
+| `amount_calculation`: expression | ✅ 已实现 | 基础算术+min/max/abs/round | V1支持更多函数 |
+| `amount_calculation`: table | ✅ 已实现 | 左闭右开 [min, max) | |
+| `amount_calculation`: ml_model | 🚫 V0禁止 | 预留字段，V0校验器拒绝 | V1实现 |
+| **热更新** | | | |
+| 手动reload API | ✅ 已实现 | POST /api/v1/reload-skills | |
+| 缓存TTL自动重载 | ✅ 已实现 | 默认60秒 | |
+| 文件监听自动重载 | 🚫 V0不做 | | V1实现watchdog |
+| **租户隔离** | | | |
+| partner_id多租户 | 🚫 V0不做 | V0固定partner_id="DEFAULT" | V1实现租户隔离 |
+| **内容自动化** | | | |
+| content_generation/LLM | 🚫 V0不做 | 移至附录 | V2.0公众号自动化 |
+| **字段契约** | | | |
+| 13字段SSOT | ✅ 已实现 | 单位统一为"元" | |
+| CustomerV0最小字段集 | ✅ 已实现 | 见下方定义 | V1扩展更多字段 |
+
+### V0字段契约（强制）
+
+**CustomerV0最小字段集**（必需）：
+```python
+customer_id: str              # 客户ID
+monthly_revenue: float        # 月均流水（元）
+annual_tax: float             # 年纳税（元）
+credit_query_6m: int          # 近6月征信查询次数
+credit_overdue_m3: int        # M3+逾期次数
+company_age_years: int        # 企业成立年限（年）
+industry: str                 # 行业
+created_at: datetime
+updated_at: datetime
+```
+
+**CustomerV0可选字段**：
+- annual_revenue, revenue_stability, customer_concentration
+- annual_invoice, tax_grade
+- 其他征信/资产/资质字段
+
+**单位约定**（强制）：
+- 金额类字段统一为"元"（不是万元）
+- 时间类字段统一为"年"、"月"、"天"
+- 比例类字段统一为小数（0-1），如0.85表示85%
+
+---
+
 ## 二、使用示例
 
 ### 2.1 基本使用
@@ -988,13 +1104,22 @@ async def reload_skills():
     热更新Skill配置
     
     POST /api/v1/reload-skills
-    Returns: {"status": "success", "message": "..."}
+    Returns: 含 report（success_count, failed_count, failed_files, errors）
     """
     try:
-        skill_repo.reload_skills()
+        report = skill_repo.reload_skills()
+        
+        if report["failed_count"] > 0:
+            return {
+                "status": "partial",
+                "message": f"部分加载失败: {report['failed_count']}个",
+                "report": report
+            }
+        
         return {
             "status": "success",
-            "message": "Skill配置已重新加载"
+            "message": f"成功加载{report['success_count']}个Skill",
+            "report": report
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1094,6 +1219,25 @@ def test_amount_calculation(matcher, mock_customer):
     
     assert amount > 0
     assert amount <= 1000000  # 假设max为100万
+
+def test_expression_variable_replacement_safe():
+    """测试变量替换不会误伤相似变量名"""
+    from utils.expression_evaluator import ExpressionEvaluator
+    
+    evaluator = ExpressionEvaluator()
+    
+    # annual_tax 不应误伤 annual_tax_rate
+    context = {
+        "annual_tax": 10000,
+        "annual_tax_rate": 0.1
+    }
+    
+    result = evaluator.evaluate_expression(
+        "annual_tax * 2 + annual_tax_rate * 100",
+        context
+    )
+    
+    assert result == 20010.0  # 10000*2 + 0.1*100
 
 def test_failed_eligibility(matcher):
     """测试不满足准入条件的情况"""

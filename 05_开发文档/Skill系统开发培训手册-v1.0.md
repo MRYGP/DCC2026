@@ -18,6 +18,57 @@
 
 ---
 
+## V0能力矩阵（强制遵守）
+
+| 能力点 | V0状态 | 说明 | V1+计划 |
+|--------|--------|------|---------|
+| **Skill定义** | | | |
+| `eligibility.logic` (all/any) | ✅ 已实现 | 仅支持顶层单层logic | V1支持嵌套logic |
+| `operator`: >=, <=, ==, !=, in, not_in | ✅ 已实现 | 完整支持 | |
+| `operator`: between | ✅ 已实现 | 双端点包含 [min, max] | |
+| `operator`: contains, matches | ✅ 已实现 | 字符串匹配 | |
+| `amount_calculation`: expression | ✅ 已实现 | 基础算术+min/max/abs/round | V1支持更多函数 |
+| `amount_calculation`: table | ✅ 已实现 | 左闭右开 [min, max) | |
+| `amount_calculation`: ml_model | 🚫 V0禁止 | 预留字段，V0校验器拒绝 | V1实现 |
+| **热更新** | | | |
+| 手动reload API | ✅ 已实现 | POST /api/v1/reload-skills | |
+| 缓存TTL自动重载 | ✅ 已实现 | 默认60秒 | |
+| 文件监听自动重载 | 🚫 V0不做 | | V1实现watchdog |
+| **租户隔离** | | | |
+| partner_id多租户 | 🚫 V0不做 | V0固定partner_id="DEFAULT" | V1实现租户隔离 |
+| **内容自动化** | | | |
+| content_generation/LLM | 🚫 V0不做 | 移至附录 | V2.0公众号自动化 |
+| **字段契约** | | | |
+| 13字段SSOT | ✅ 已实现 | 单位统一为"元" | |
+| CustomerV0最小字段集 | ✅ 已实现 | 见下方定义 | V1扩展更多字段 |
+
+### V0字段契约（强制）
+
+**CustomerV0最小字段集**（必需）：
+```python
+customer_id: str              # 客户ID
+monthly_revenue: float        # 月均流水（元）
+annual_tax: float             # 年纳税（元）
+credit_query_6m: int          # 近6月征信查询次数
+credit_overdue_m3: int        # M3+逾期次数
+company_age_years: int        # 企业成立年限（年）
+industry: str                 # 行业
+created_at: datetime
+updated_at: datetime
+```
+
+**CustomerV0可选字段**：
+- annual_revenue, revenue_stability, customer_concentration
+- annual_invoice, tax_grade
+- 其他征信/资产/资质字段
+
+**单位约定**（强制）：
+- 金额类字段统一为"元"（不是万元）
+- 时间类字段统一为"年"、"月"、"天"
+- 比例类字段统一为小数（0-1），如0.85表示85%
+
+---
+
 ## 第一部分：核心概念（30分钟）
 
 ### 1.1 为什么需要Skill系统？
@@ -635,23 +686,52 @@ matcher = ProductMatcherRunner(
     audit_logger=audit_logger
 )
 
-# Step 2：创建客户对象
+# Step 2：创建客户对象（CustomerV0 完整版）
 customer = Customer(
+    # 必需字段
     customer_id="CUST_001",
     name="张三",
-    partner_id="PARTNER_001",
+    partner_id="DEFAULT",              # V0 固定为 DEFAULT
     company_name="某某科技有限公司",
     company_age_years=3,
     industry="软件开发",
     region="北京",
-    monthly_revenue=150000,         # 月均流水15万
-    annual_tax=18000,               # 年纳税1.8万
-    credit_query_6m=3,              # 近6月查询3次
-    credit_overdue_m3=0,            # 无M3+逾期
-    # ... 其他字段
+    
+    # 流水体质（13 字段中的核心字段）
+    monthly_revenue=150000,            # 月均流水 15 万元（注意：单位是元）
+    annual_revenue=1800000,            # 年营收 180 万元
+    revenue_stability=0.85,            # 流水稳定性 85%
+    customer_concentration=0.4,        # 客户集中度 40%
+    
+    # 票税体质
+    annual_invoice=1500000,            # 年开票 150 万元
+    annual_tax=18000,                  # 年纳税 1.8 万元
+    tax_grade="B",                     # 纳税等级 B
+    
+    # 征信体质（13 字段中的核心字段）
+    credit_score=720,                  # 征信分数
+    credit_query_6m=3,                 # 近 6 月查询 3 次
+    credit_overdue_m1=0,               # M1 逾期 0 次
+    credit_overdue_m3=0,               # M3+ 逾期 0 次
+    debt_ratio=0.45,                   # 负债率 45%
+    small_loan_count=1,                # 小贷笔数
+    
+    # 资产体质
+    has_mortgage=False,                # 无抵押物
+    mortgage_value=0,
+    mortgage_ratio=0,
+    
+    # 资质体质
+    high_tech_certification=True,      # 有高新认证
+    specialized_certification=False,   # 无专精特新
+    
+    # 时间戳
     created_at=datetime.now(),
     updated_at=datetime.now()
 )
+
+# 注意：V0 所有金额单位为「元」（不是万元）
+# 注意：V0 partner_id 固定为「DEFAULT」（V1 才做多租户）
 
 # Step 3：执行匹配
 matched_products = matcher.match(customer, top_n=5)
@@ -1149,12 +1229,37 @@ skill_id: "PRODUCT_CMB_TAX_001"
 
 ### Q1：修改Skill后多久生效？
 
-**A**：1分钟内。Skill Runner每分钟自动重新加载配置。
+**A**：V0 支持两种方式：
 
-也可以手动触发：
+**方式1：手动触发（立即生效）**
 ```bash
 curl -X POST http://localhost:8000/api/v1/reload-skills
 ```
+响应示例：
+```json
+{
+  "status": "success",
+  "message": "成功加载20个Skill",
+  "report": {
+    "success_count": 20,
+    "failed_count": 0,
+    "failed_files": [],
+    "errors": [],
+    "timestamp": "2026-02-12T10:00:00Z"
+  }
+}
+```
+
+**方式2：缓存 TTL 自动重载（默认 60 秒）**
+- 修改 YAML 后，等待 TTL 过期（默认 60 秒）
+- Skill Runner 会自动重新加载
+- 适合非紧急更新
+
+**V1+ 扩展**：
+- 文件监听自动重载（watchdog）
+- 配置化 TTL（运维可调整）
+
+**推荐**：生产环境使用方式1（可控），开发环境可依赖方式2。
 
 ---
 
@@ -1226,7 +1331,147 @@ print(suggestion['suggested_config'])
 
 ---
 
-## 第七部分：实战演练（30分钟）
+## 第七部分：故障排查清单（10分钟）
+
+### 排查清单（按优先级）
+
+#### 1. Skill 加载失败
+
+**症状**：调用 reload API 返回 failed_count > 0
+
+**排查步骤**：
+```bash
+# 1. 查看 reload 报告
+curl -X POST http://localhost:8000/api/v1/reload-skills
+
+# 2. 检查 YAML 语法
+python tools/validate_skill.py SKILL_FILE.yaml
+
+# 3. 检查编码（必须 UTF-8）
+file -i SKILL_FILE.yaml
+```
+
+**常见原因**：
+- YAML 缩进错误（必须用空格，不能用 Tab）
+- 中文引号（""）误用为英文引号（""）
+- 文件编码非 UTF-8
+- metadata.status != "active"（会被跳过）
+
+---
+
+#### 2. 匹配结果为空
+
+**症状**：所有客户都匹配 0 个产品
+
+**排查步骤**：
+```python
+# 单独测试准入条件
+product = skill_repo.load_product_by_id("PRODUCT_XXX")
+eligible, failed = matcher._check_eligibility(customer, product)
+print(f"失败条件: {failed}")
+```
+
+**常见原因**：
+- 字段单位错误（YAML 用万元，代码传元）
+- 字段名拼写错误（montly_revenue vs monthly_revenue）
+- 行业黑名单覆盖过宽
+- 阈值设置过严
+
+---
+
+#### 3. 额度计算为 0
+
+**症状**：匹配成功但 estimated_amount=0
+
+**排查步骤**：
+```python
+# 单独测试额度计算
+amount = matcher._calculate_amount(customer, product)
+print(f"计算额度: {amount}")
+
+# 检查公式
+print(f"公式: {product.amount_calculation['formula']}")
+print(f"客户数据: {customer.to_dict()}")
+```
+
+**常见原因**：
+- table 区间未覆盖客户值
+- 公式中变量名错误
+- amount_range.max 限制过低
+- 客户字段值为 None
+
+---
+
+#### 4. 热更新不生效
+
+**症状**：修改 YAML 后结果未变化
+
+**排查步骤**：
+```bash
+# 1. 确认调用了 reload
+curl -X POST http://localhost:8000/api/v1/reload-skills
+
+# 2. 检查缓存 TTL
+# 若未调用 reload，等待 60 秒后自动生效
+
+# 3. 检查 Skill 文件路径
+ls -la skills/products/banks/cmb/
+```
+
+**常见原因**：
+- 未调用 reload API
+- 文件路径错误（Skill 不在 skills/ 目录下）
+- 文件名不匹配（不是 .yaml 后缀）
+- metadata.status = "inactive"
+
+---
+
+#### 5. 表达式求值失败
+
+**症状**：RuntimeError: 表达式求值失败
+
+**排查步骤**：
+```python
+# 测试表达式
+from utils.expression_evaluator import ExpressionEvaluator
+
+evaluator = ExpressionEvaluator()
+context = {"annual_tax": 10000}
+
+try:
+    result = evaluator.evaluate_expression("annual_tax * 30", context)
+    print(f"结果: {result}")
+except Exception as e:
+    print(f"错误: {e}")
+```
+
+**常见原因**：
+- 表达式中使用未定义变量
+- 表达式语法错误（如 `annual_tax x 30`）
+- 变量名包含非法字符
+- 除零错误
+
+---
+
+### 快速诊断命令
+
+```bash
+# 验证所有 Skill
+python tools/validate_all_skills.py skills/products/
+
+# 测试单个客户
+python tools/test_customer.py --customer-id CUST_001
+
+# 查看加载的 Skill 列表
+curl http://localhost:8000/api/v1/skills/list
+
+# 查看审计日志
+tail -f logs/audit.log | grep product_match
+```
+
+---
+
+## 第八部分：实战演练（30分钟）
 
 ### 演练任务
 
@@ -1365,6 +1610,7 @@ curl http://localhost:8000/api/v1/skills/list
 - [ ] 理解合规要求
 - [ ] 理解审计日志
 - [ ] 会调试Skill问题
+- [ ] 会使用故障排查清单
 - [ ] 完成实战演练
 
 ---
