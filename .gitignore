@@ -41,6 +41,9 @@ yarn-error.log*
 *~
 .DS_Store
 
+# Cursor / Claude project index (local cache)
+.claude/
+
 # Database
 *.db
 *.sqlite
