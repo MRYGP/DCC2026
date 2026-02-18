@@ -1027,7 +1027,7 @@ if any(word in text for word in forbidden_words):
 {
   "action": "product_match",
   "customer_id": "CUST_001",
-  "partner_id": "PARTNER_001",
+  "partner_id": "DEFAULT",
   "details": {
     "matched_count": 3,
     "failed_count": 17,

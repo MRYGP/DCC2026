@@ -3,7 +3,7 @@
 **文档性质**：技术实现文档  
 **创建日期**：2026-02-12  
 **适用对象**：开发团队  
-**编程语言**：Python 3.10+
+**编程语言**：Python 3.11+（与《技术栈选择》一致）
 
 ---
 
@@ -965,7 +965,7 @@ matcher = ProductMatcherRunner(
 customer = Customer(
     customer_id="CUST_001",
     name="张三",
-    partner_id="PARTNER_001",
+    partner_id="DEFAULT",
     company_name="某某科技有限公司",
     company_age_years=3,
     industry="软件开发",
@@ -1145,7 +1145,7 @@ def mock_customer():
     return Customer(
         customer_id="TEST_001",
         name="测试客户",
-        partner_id="PARTNER_001",
+        partner_id="DEFAULT",
         company_name="测试公司",
         company_age_years=3,
         industry="软件开发",
@@ -1245,7 +1245,7 @@ def test_failed_eligibility(matcher):
     bad_customer = Customer(
         customer_id="TEST_BAD",
         name="不合格客户",
-        partner_id="PARTNER_001",
+        partner_id="DEFAULT",
         monthly_revenue=10000,      # 流水太低
         annual_tax=1000,            # 纳税太低
         credit_query_6m=15,         # 查询次数过多

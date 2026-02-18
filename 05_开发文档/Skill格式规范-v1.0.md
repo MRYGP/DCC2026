@@ -24,7 +24,7 @@
 | 缓存TTL自动重载 | ✅ 已实现 | 默认60秒 | |
 | 文件监听自动重载 | 🚫 V0不做 | | V1实现watchdog |
 | **租户隔离** | | | |
-| partner_id多租户 | 🚫 V0不做 | V0固定partner_id="DEFAULT" | V1实现租户隔离 |
+| partner_id多租户 | 🚫 V0不做 | V0 固定 partner_id="DEFAULT"，字段保留供 V1 扩展；代码/测试一律用 DEFAULT | V1实现租户隔离 |
 | **内容自动化** | | | |
 | content_generation/LLM | 🚫 V0不做 | 移至附录 | V2.0公众号自动化 |
 | **字段契约** | | | |
