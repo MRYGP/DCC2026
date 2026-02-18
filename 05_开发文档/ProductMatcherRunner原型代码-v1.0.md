@@ -1074,7 +1074,7 @@ async def match_products(request: MatchRequest):
         customer = Customer(
             customer_id=request.customer_id,
             name="",  # API请求中可能不需要
-            partner_id="",  # 从JWT Token中获取
+            partner_id="DEFAULT",  # V0 固定；V1 从 JWT Token 获取
             monthly_revenue=request.monthly_revenue,
             annual_tax=request.annual_tax,
             credit_query_6m=request.credit_query_6m,
